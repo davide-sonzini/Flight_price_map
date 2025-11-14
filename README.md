@@ -12,3 +12,6 @@ This project fetches flight prices from an origin airport to multiple destinatio
 - Input CSV: `airports.csv`
 - Kaggle dataset source: https://www.kaggle.com/datasets/samvelkoch/global-airports-iata-icao-timezone-geo?resource=download
 - Output CSV: `airports_with_prices.csv` (ready for Kepler.gl)
+
+
+Amadeus for developers allows Flight Offers Search API keys
