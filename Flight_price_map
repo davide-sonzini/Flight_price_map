@@ -1,0 +1,116 @@
+!pip install amadeus pandas
+
+import pandas as pd
+import time
+import datetime
+from amadeus import Client, ResponseError
+from google.colab import files
+import random
+
+# -------------------------------
+# CONFIG
+# -------------------------------
+API_KEY = "ligX17GEhAERS34XjfmMW6rpG1c5uHZu"       # Replace with your Amadeus test GET API key
+API_SECRET = "2jWVw0p9UA72Ykke" # Replace with your Amadeus secret
+ORIGIN_AIRPORT = "MXP"
+DEPARTURE_DATE = (datetime.date.today() + datetime.timedelta(days=30)).strftime("%Y-%m-%d")
+AUTOSAVE_INTERVAL = 50  # Save after every 50 airports
+SUBSET_SIZE = 1000       # Number of airports to randomly select
+
+# -------------------------------
+# INIT CLIENT
+# -------------------------------
+amadeus = Client(client_id=API_KEY, client_secret=API_SECRET)
+
+# -------------------------------
+# LOAD AND SUBSET AIRPORTS
+# -------------------------------
+airports = pd.read_csv('airports.csv')
+
+if len(airports) > SUBSET_SIZE:
+    airports_subset = airports.sample(n=SUBSET_SIZE, random_state=42).reset_index(drop=True)
+else:
+    airports_subset = airports.copy()
+
+# Optional: save subset for reference
+airports_subset.to_csv('airports_subset_1000.csv', index=False)
+
+print(f"Random subset of {len(airports_subset)} airports created.")
+
+# -------------------------------
+# PRICE BUCKET / COLOR FUNCTION
+# -------------------------------
+def assign_bucket_and_color(price):
+    if price is None:
+        return "No Data", "#CCCCCC"
+    elif price < 100:
+        return "<100", "#0000FF"        # Blue
+    elif price < 200:
+        return "100-200", "#00FF00"    # Green 1
+    elif price < 400:
+        return "200-400", "#008000"    # Green 2
+    elif price < 800:
+        return "400-800", "#FFFF00"    # Yellow
+    elif price < 1000:
+        return "800-1000", "#FFA500"   # Orange
+    else:
+        return ">1000", "#FF0000"      # Red
+
+# -------------------------------
+# FUNCTION TO GET CHEAPEST FLIGHT
+# -------------------------------
+def get_cheapest_flight(origin, destination, date):
+    try:
+        response = amadeus.shopping.flight_offers_search.get(
+            originLocationCode=origin,
+            destinationLocationCode=destination,
+            departureDate=date,
+            adults=1,
+            max=5
+        )
+        data = response.data
+        if not data:
+            return None
+        prices = [float(offer['price']['total']) for offer in data if 'price' in offer]
+        return min(prices) if prices else None
+    except ResponseError as e:
+        print(f"Error fetching {origin} -> {destination}: {e}")
+        return None
+
+# -------------------------------
+# LOOP OVER DESTINATIONS
+# -------------------------------
+results = []
+output_file = 'airports_with_prices.csv'
+
+for i, dest in enumerate(airports_subset['IATA']):
+    if dest == ORIGIN_AIRPORT:
+        continue
+
+    print(f"Fetching {ORIGIN_AIRPORT} -> {dest} ({i+1}/{len(airports_subset)}) ...")
+    price = get_cheapest_flight(ORIGIN_AIRPORT, dest, DEPARTURE_DATE)
+    bucket, color = assign_bucket_and_color(price)
+
+    results.append({
+        'origin': ORIGIN_AIRPORT,
+        'destination': dest,
+        'price_usd': price,
+        'bucket': bucket,
+        'color': color
+    })
+
+    # Autosave
+    if (i+1) % AUTOSAVE_INTERVAL == 0:
+        df = pd.DataFrame(results)
+        df.to_csv(output_file, index=False)
+        print(f"Autosaved {i+1} airports to {output_file}")
+
+    time.sleep(1)  # Prevent hitting rate limits
+
+# -------------------------------
+# FINAL SAVE
+# -------------------------------
+df = pd.DataFrame(results)
+df.to_csv(output_file, index=False)
+files.download(output_file)
+print(f"Done! CSV saved as {output_file}")
